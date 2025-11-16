@@ -4,6 +4,7 @@
          "platform.stdio-baud-rate": 115200,
          "platform.stdio-buffered-serial": 1,
          "target.application-profile": "bare-metal",
+         "target.c_lib": "small",
       }
    }
 }
