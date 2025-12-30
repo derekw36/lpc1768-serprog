@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #include "mbed.h"
 #include "USBSerial.h"
 
@@ -29,12 +31,10 @@
 
 // Peripheral setup
 BusOut leds(LED4, LED3, LED2, LED1);
-SPI spi(MBED_SPI0, use_gpio_ssel);
 
 // Extend the USBSerial class to handle serprog commands
-class SerProg : private USBSerial
+class SerProg : private SPI, USBSerial
 {
-    SPI *spi;
     uint8_t buf[4096];
 
     ssize_t ser_to_spi(size_t len)
@@ -47,13 +47,13 @@ class SerProg : private USBSerial
         leds = 0x01;
         while(total < (ssize_t)len)
         {
-            rbytes = read(buf, MIN(len, sizeof(buf)));
+            rbytes = USBSerial::read(buf, MIN(len, sizeof(buf)));
             if(rbytes < 0)
             {
                 break;
             }
 
-            wbytes = spi->write(buf, rbytes, NULL, 0);
+            wbytes = SPI::write(buf, rbytes, NULL, 0);
             if(wbytes < 0)
             {
                 break;
@@ -76,13 +76,13 @@ class SerProg : private USBSerial
         leds = 0x08;
         while(total < (ssize_t)len)
         {
-            rbytes = spi->write(NULL, 0, buf, MIN(len, sizeof(buf)));
+            rbytes = SPI::write(NULL, 0, buf, MIN(len, sizeof(buf)));
             if(rbytes < 0)
             {
                 break;
             }
 
-            wbytes = write(buf, rbytes);
+            wbytes = USBSerial::write(buf, rbytes);
             if(wbytes < 0)
             {
                 break;
@@ -96,26 +96,26 @@ class SerProg : private USBSerial
     }
 
 public:
-    SerProg(SPI *spi) : USBSerial(false), spi(spi)
+    SerProg() : SPI(MBED_SPI0, use_gpio_ssel), USBSerial(false)
     {
         // Configure SPI bus before connecting USB
-        this->spi->format(8, 0);
-        this->spi->set_default_write_value(0x00);
+        SPI::format(8, 0);
+        SPI::set_default_write_value(0x00);
 
         // Connect USB
-        connect();
+        USBSerial::connect();
     }
 
     int transact(void)
     {
         // Wait until serprog connects to us
-        wait_ready();
+        USBSerial::wait_ready();
 
-        switch(_getc())
+        switch(USBSerial::_getc())
         {
             case S_CMD_NOP:
             {
-                _putc(S_ACK);
+                USBSerial::_putc(S_ACK);
                 break;
             }
 
@@ -123,8 +123,8 @@ public:
             {
                 static const uint16_t ver = S_IFACE_VER;
 
-                _putc(S_ACK);
-                write(&ver, 2);
+                USBSerial::_putc(S_ACK);
+                USBSerial::write(&ver, 2);
                 break;
             }
 
@@ -134,8 +134,8 @@ public:
                 uint8_t map[32] = {0};
                 memcpy(map, &cmds, sizeof(cmds));
 
-                _putc(S_ACK);
-                write(map, 32);
+                USBSerial::_putc(S_ACK);
+                USBSerial::write(map, 32);
                 break;
             }
 
@@ -144,8 +144,8 @@ public:
                 char name[16] = {0};
                 strncpy(name, SERPROG_NAME, sizeof(name));
 
-                _putc(S_ACK);
-                write(name, 16);
+                USBSerial::_putc(S_ACK);
+                USBSerial::write(name, 16);
                 break;
             }
 
@@ -153,22 +153,22 @@ public:
             {
                 static const uint16_t sz = 0xFFFF;
 
-                _putc(S_ACK);
-                write(&sz, 2);
+                USBSerial::_putc(S_ACK);
+                USBSerial::write(&sz, 2);
                 break;
             }
 
             case S_CMD_Q_BUSTYPE:
             {
-                _putc(S_ACK);
-                _putc(BUS_SPI);
+                USBSerial::_putc(S_ACK);
+                USBSerial::_putc(BUS_SPI);
                 break;
             }
 
             case S_CMD_SYNCNOP:
             {
-                _putc(S_NAK);
-                _putc(S_ACK);
+                USBSerial::_putc(S_NAK);
+                USBSerial::_putc(S_ACK);
                 break;
             }
 
@@ -179,11 +179,11 @@ public:
                 if(bus == BUS_SPI)
                 {
                     // We are always SPI! Just ACK it
-                    _putc(S_ACK);
+                    USBSerial::_putc(S_ACK);
                 }
                 else
                 {
-                    _putc(S_NAK);
+                    USBSerial::_putc(S_NAK);
                 }
                 break;
             }
@@ -193,41 +193,41 @@ public:
                 uint32_t slen = 0;
                 uint32_t rlen = 0;
 
-                read(&slen, 3);
-                read(&rlen, 3);
+                USBSerial::read(&slen, 3);
+                USBSerial::read(&rlen, 3);
 
-                spi->select();
+                SPI::select();
 
                 ser_to_spi(slen);
-                _putc(S_ACK);
+                USBSerial::_putc(S_ACK);
                 spi_to_ser(rlen);
 
-                spi->deselect();
+                SPI::deselect();
                 break;
             }
 
             case S_CMD_S_SPI_FREQ:
             {
                 uint32_t freq = 0;
-                read(&freq, 4);
+                USBSerial::read(&freq, 4);
 
                 if(freq != 0)
                 {
-                    spi->frequency((int)freq);
+                    SPI::frequency((int)freq);
 
-                    _putc(S_ACK);
-                    write(&freq, 4);
+                    USBSerial::_putc(S_ACK);
+                    USBSerial::write(&freq, 4);
                 }
                 else
                 {
-                    _putc(S_NAK);
+                    USBSerial::_putc(S_NAK);
                 }
                 break;
             }
 
             default:
             {
-                _putc(S_NAK);
+                USBSerial::_putc(S_NAK);
                 break;
             }
         }
@@ -238,7 +238,7 @@ public:
 
 int main(void)
 {
-    SerProg sp(&spi);
+    SerProg sp;
 
     printf("%s up and running!\n", SERPROG_NAME);
     while(1)
